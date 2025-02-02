@@ -29,10 +29,13 @@ class ShellyHttpDeviceProxy(SimpleDeviceProxy):
         self.uri_path = '/rpc/' + 'Shelly.getDeviceInfo'
         self.uri_query = ''
 
-        #consider building LUTs for valid operations etc
-        #based on getconfig
+    def notImplemented(self,fname):
+        """ Generate a response for something not implemented yet """
+        print('info: {} not implemented')
+        return json.dumps({'error':'not implemented'})
+
     def do_rpc(self) ->str:
-        url = 'http://' + self.uri_host + self.uri_path + self.uri_query
+        url = 'http://' + self.uri_host + self.uri_path + '?' + self.uri_query
         print("url={}".format(url))
         try:
             res = builtin_request.urlopen(url)
@@ -47,89 +50,97 @@ class ShellyHttpDeviceProxy(SimpleDeviceProxy):
 
 
         doc = json.loads(ret[0])
-        #print("parsed: {}".format(str(doc)))
         return doc
 
     def getDeviceInfo(self):
         self.uri_path = 'Shelly.getDeviceInfo'
         return self.do_rpc()
 
-    def kvsSet(self, key, val):
+    def kvsSet(self, key:str, val):
+        """ Set value on the device's KVS service """
         self.uri_path = '/rpc/KVS.Set'
-        self.uri_query = '?key="{}"&value="{}"'.format(key, val)
+        self.uri_query = 'key="{}"&value="{}"'.format(key, val)
         return self.do_rpc()
 
-    def kvsGet(self, key) -> str:
+    def kvsGet(self, key):
+        """ Set value from the device's KVS service """
         self.uri_path = '/rpc/KVS.Get'
-        self.uri_query = '?key="{}"'.format(key)
+        self.uri_query = 'key="{}"'.format(key)
         return self.do_rpc()
 
     def kvsList(self, filter=None):
+        """ Return set of {key,val} pairs where key matches filter pred """
         self.uri_path = '/rpc/KVS.List'
         if filter != None:
             assert type(filter) == str
-            self.uri_query = '?match={}'.format(filter)
+            self.uri_query = 'match={}'.format(filter)
         else:
             self.uri_query = ''
         return self.do_rpc()
     
-    def kvsDelete(self,keystr):
-        assert type(keystr) == str
+    def kvsDelete(self,keystr:str):
+        """ Delete value from the device's KVS service """
         self.uri_path = '/rpc/KVS.Delete'
-        self.uri_query = '?key="{}"'.format(keystr)
+        self.uri_query = 'key="{}"'.format(keystr)
         return self.do_rpc()
     
-    def getInputStatus(self,input_id : int):
-        assert type(input_id) == int
+    def getInputStatus(self,input_id:int):
+        """ Get the state of an input e.g. on/off"""
         self.uri_path = '/rpc/Input.GetStatus'
-        self.uri_query = '?id={}'.format(input_id)
+        self.uri_query = 'id={}'.format(input_id)
         return self.do_rpc()
-    def getInputConfig(self, input_id : int):
-        assert type(input_id) == int
+
+    def getInputConfig(self, input_id:int):
+        """ Het config for a specific device input """
         self.uri_path = '/rpc/Input.GetConfig'
-        self.uri_query = '?id={}'.format(input_id)
+        self.uri_query = 'id={}'.format(input_id)
         return self.do_rpc()
-    def setInputConfig(self, input_id : int, jsonconf : str):
+
+    def setInputConfig(self, input_id:int, jsonconf:str):
         """Set config, returns whether a restart is required """
-        assert type(input_id) == int and type(jsonconf) == str
         self.uri_path = '/rpc/Input.SetConfig'
-        self.uri_query = '?id={}&config={}'.format(input_id, jsonconf)
+        self.uri_query = 'id={}&config={}'.format(input_id, jsonconf)
         return self.do_rpc()
+
     def resetInputCounters(self, input_id:int, counterlist):
-        self.uri_path = 'Input.ResetCounters'
-        self.uri_query = '?id={}&type={}'.format(input_id, counterlist)
-        return self.do_rpc()
+        #self.uri_path = 'Input.ResetCounters'
+        #self.uri_query = 'id={}&type={}'.format(input_id, counterlist)
+        #return self.do_rpc()
+        return self.notImplemented('ResetInputCounters')
+
     def triggerInput(self):
-        pass
-    def checkInputExpression(self, exprjs : str, inputlist):
+        return self.notImplemented('TriggerInput')
+
+    def checkInputExpression(self, exprjs:str, inputlist):
         """Take an expression with a var, for each input evel"""
-        assert type(exprjs) == str
         self.uri_path = '/rpc/Input.CheckExpression'
-        self.uri_query = '?expr="{}"&inputs={}'.format(exprjs, inputlist)
+        self.uri_query = 'expr="{}"&inputs={}'.format(exprjs, inputlist)
         return self.do_rpc()
-    def getSwitchStatus(self,switch_id):
-        assert type(switch_id) == int
+
+    def getSwitchStatus(self,switch_id:int):
+        """ Fetch status of an output relay """
         self.uri_path = '/rpc/Switch.GetStatus'
-        self.uri_query = '?id={}'.format(switch_id)
+        self.uri_query = 'id={}'.format(switch_id)
         return self.do_rpc()
 
     def setRelay(self,switch_id,val,timer_s=None):
-        assert type(switch_id) == int and val in (True,False)
+        """ Set output relay on or off """
         uri_output = 'on' if val==True else 'off'
         self.uri_path = '/relay/{}'.format(switch_id)
-        self.uri_query = '?turn={}'.format(uri_output)
+        self.uri_query = 'turn={}'.format(uri_output)
         if timer_s != None:
             assert type(timer_s) == int
             self.uri_query += '&timer={}'.format(timer_s)
         return self.do_rpc()
     
     def toggleRelay(self, switch_id):
-        assert type(switch_id) == int
+        """ Flip the output state """
         self.uri_path = '/relay/{}'.format(switch_id)
-        self.uri_query = '?turn=toggle'
+        self.uri_query = 'turn=toggle'
         return self.do_rpc()
         
     def getSystemStatus(self):
+        """ Fetch info about the remote device """
         self.uri_path = '/rpc/Sys.GetStatus'
         self.uri_query = ''
         return self.do_rpc()
@@ -139,78 +150,86 @@ class ShellyHttpDeviceProxy(SimpleDeviceProxy):
         self.uri_query =''
         return self.do_rpc()
 
-    # Batch of untested new stuff
-    def getScriptConfig(self, script_id : int):
-        assert type(script_id) == int
+    def getScriptConfig(self, script_id:int):
+        """ Configuration for a device-hosted script """
         self.uri_path = '/rpc/Script.GetConfig'
-        self.uri_query = '?id={}'.format(script_id)
+        self.uri_query = 'id={}'.format(script_id)
         return self.do_rpc()
-    def setScriptConfig(self, script_id : int, jsonconf : str):
-        assert type(script_id) == int
-        assert type(jsonconf) == str
+
+    def setScriptConfig(self, script_id:int, jsonconf:str):
+        """ Configuration for a device-hosted script """
         self.uri_path = '/rpc/Script.SetConfig'
-        self.uri_query = '?id={}&config={}'.format(script_id,jsonconf)  
+        self.uri_query = 'id={}&config={}'.format(script_id,jsonconf)  
         return self.do_rpc()                            
-    def getScriptStatus(self, script_id : int):
-        assert type(script_id) == int
+
+    def getScriptStatus(self, script_id:int):
+        """ Fetch status of a script running on the device """
         self.uri_path = '/rpc/Script.GetStatus'
-        self.uri_query = '?id={}'.format(script_id)
+        self.uri_query = 'id={}'.format(script_id)
         return self.do_rpc()
+
     def listScripts(self):
+        """ Fetch scripts running on the device """
         self.uri_path = '/rpc/Script.List'
         self.uri_query = ''
-        #TODO This returns a variable len array, not handled
+        #TODO This returns a variable len array, json.loads might choke
         return self.do_rpc()
-    def createScript(self, script_name : str):
+
+    def createScript(self, script_name:str):
         """ Make a new script, the script id will be returned """
         self.uri_path = '/rpc/Script.Create'
-        self.uri_query = '?name="{}"'
+        self.uri_query = 'name="{}"'.format(script_name)
         return self.do_rpc()
-    def deleteScript(self, script_id : int):
-        assert type(script_id) == int
+
+    def deleteScript(self, script_id:int):
         self.uri_path = 'rpc/Script.Delete'
-        self.uri_query = '?id={}'.format(script_id)
+        self.uri_query = 'id={}'.format(script_id)
         pass
-    def startScript(self, script_id : int, code : str):
-        assert type(script_id) == int
-        self.uri_path = '/rpc/Script.Start'
-        self.uri_query = '?id={}'.format(script_id)
-        return self.do_rpc()
-    def stopScript(self, script_id : int):
-        assert type(script_id) == int
+
+    def startScript(self, script_id:int, code:str):
+        #self.uri_path = '/rpc/Script.Start'
+        #self.uri_query = 'id={}'.format(script_id)
+        #return self.do_rpc()
+        return self.notImplemented('StartScript')
+
+    def stopScript(self, script_id:int):
         self.uri_path = '/rpc/Script.Stop'
-        self.uri_query = '?id={}'.format(script_id)
+        self.uri_query = 'id={}'.format(script_id)
         return self.do_rps()
-    def putScriptCode(self, script_id : int, code : str):
-        assert type(script_id) == int
-        assert type(code) == str
+
+    def putScriptCode(self, script_id:int, code:str):
         self.uri_path = '/rpc/Script.PutCode'
-        self.uri_query = '?id={}&code="{}"'.format(script_id, code)
+        self.uri_query = 'id={}&code="{}"'.format(script_id, code)
         return self.do_rpc()
-    def getScriptCode(self, script_id : int):
+
+    def getScriptCode(self, script_id:int):
         self.uri_path = 'rpc/Script.GetCode'
-        self.uri_query = '?id={}'.format(script_id)
+        self.uri_query = 'id={}'.format(script_id)
         return self.do_rpc()
+
     def evalScript(self):
         self.uri_path = '/rpc/Script.Eval'
         self.uri_query = ''
         return self.do_rpc()
-    def setEMConfig(self, id : int, jsonconf : str):
+
+    def setEMConfig(self, id:int, jsonconf:str):
         self.uri_path = '/EM.SetConfig'
-        self.uri_query = '?id={}&config={}'.format(id, jsonconf)
+        self.uri_query = 'id={}&config={}'.format(id, jsonconf)
         return self.do_rpc()
-    def getRMConfig(self, id : int):
+
+    def getEMConfig(self, id:int):
         self.uri_path = '/EM.GetConfig'
-        self.uri_query = '?id={}'.format(id)
+        self.uri_query = 'id={}'.format(id)
         return self.do_rpc()
-    def getEMStatus(self, id : int):
+
+    def getEMStatus(self, id:int):
         self.uri_path = '/rpc/EM.GetStatus'
-        self.uri_query = '?id={}'.format(id)
+        self.uri_query = 'id={}'.format(id)
         return self.do_rpc()
 
 
 if __name__ == "__main__":
-    """Poke around with device on 192.168.0.32"""
+    """smoke test: Poke around with device on 192.168.0.32"""
     x = ShellyHttpDeviceProxy('192.168.0.32')
     j = x.kvsSet("k1", "1")
     print(j)

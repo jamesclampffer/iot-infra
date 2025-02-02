@@ -206,7 +206,6 @@ class SwitchComponent(BaseMockComponent):
         self.output = SwitchComponent.OutputValue.OFF
 
     def call(self, fname, args):
-        print("trace: {} {} called".format("Input", fname))
         lut = self.dispatch_lut
         if fname not in lut:
             return self.operationNotFound(fname)
@@ -258,7 +257,6 @@ class KVSComponent(BaseMockComponent):
         """ Add etag support later """
         key = args['key']
         vpair = args['value'].split(' ')
-        # tuple unpack should work on list??
         self.kvs_map[key] = vpair
         rval = {
             "etag": "",
@@ -329,16 +327,12 @@ class DeviceState:
 
     def process_get(self, pathstr : str) -> str:
         """ Pull apart the URI and figure out what to do """
-        print("debug: Processing path: {}".format(pathstr))
         resp = self.handle_root(pathstr)
-        print("debug: generated response {}".format(resp))
         return resp
 
     def handle_root(self, uri : str):
         """Redirect to handler for resource in the uri query"""
         uriobj = urlparse(uri)
-
-        #Build up query argument map, use parse_qs?
         q = uriobj.query
         pairs = {}
         substrs = q.split('&')
@@ -352,7 +346,7 @@ class DeviceState:
         if 'id' in pairs:
             id = int(pairs['id'])
 
-        #todo: fold these decode cases into a generic dispatch
+        #TODO: Lookup table line mock-emitters.py uses
         resp = None
         p = uriobj.path
         if p.find('Input') == 1:
@@ -362,25 +356,20 @@ class DeviceState:
             print(fname)
             resp = self.inputs[id].call(fname, pairs)
         elif p.find('Switch') == 1:
-            print("Switch called")
             if id not in range(len(self.inputs)):
                 return self.componentIdNotFound(id)
             fname = p[8:].split('?')[0]
-            print(fname)
             resp = self.switches[id].call(fname,pairs)
         elif p.find('Sys') == 1:
             fname = p[5:].splid('?')[0]
-            print(fname)
             resp = self.sys.call(fname, pairs)
         elif p.find('Scripts') == 1:
             if id not in range(len(self.inputs)):
                 return self.componentIdNotFound(id)
             fname = p[8:].split('?')[0]
-            print(fname)
             resp = self.scripts[id].call(id, fname, pairs)
         elif p.find('KVS') == 1:
             fname = p[5:].split('?')[0]
-            print(fname)
             resp = self.kvs.call(fname,pairs)
         else:
             print("error: Component not found")
@@ -422,7 +411,6 @@ class MockShellyDevice(BaseHTTPRequestHandler):
             self.wfile.write(bytes(resp, 'utf-8'))
 
 if __name__ == '__main__':
-    # todo - figure out how to pass args in vscode
     if len(sys.argv) == 1:
         sys.argv.append('localhost')
         sys.argv.append('8080')
@@ -430,7 +418,7 @@ if __name__ == '__main__':
             _, hostname, port = sys.argv
             print("Starting, host={} port={}".format(hostname,port))
         else:
-            print("error: expected a host and port argument")
+            print("error: expected a host and port argument, using defaults")
 
     # Make the mock device
     print("Starting server")
