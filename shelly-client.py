@@ -17,12 +17,15 @@
 import urllib.request as builtin_request
 import json
 
-import shelly_api_data
-
 class SimpleDeviceProxy:
     __slots__ = 'device_vendor', 'device_model'
 
 class ShellyHttpDeviceProxy(SimpleDeviceProxy):
+    """
+    Interface for *unsecured* Shelly REST API
+    Concepts (e.g. Component) map to the shelly docs.
+    """
+
     __slots__ = 'uri_host', 'uri_path', 'uri_query'
     def __init__(self, host):
         self.uri_host = host

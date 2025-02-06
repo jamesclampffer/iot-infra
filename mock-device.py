@@ -15,10 +15,20 @@
 """
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from enum import Enum, IntEnum
+from enum import Enum, Flag, UNIQUE
+import enum
 import json
 import sys
 from urllib.parse import urlparse
+
+class ComponentNotFound(BaseException):
+    __slots__ = 'what'
+    def __init__(self, w):
+        self.what = w
+    def __str_(self):
+        return self.__repr__()
+    def __repr__(self):
+        return "ComponentNotFound: {}".format(self.what)
 
 class BaseMockComponent:
     """
@@ -29,7 +39,7 @@ class BaseMockComponent:
     dispatch_lit: name->method obj mapping
     component_config: dict containing a canned config for the component
     """
-    __slots__ = 'deviceref', 'dispatch_lut', 'component_config'
+    __slots__ = 'deviceref', 'dispatch_lut', 'config'
     def __init__(self):
         """ Just explicitly null out slots """
         self.deviceref = None
@@ -38,12 +48,42 @@ class BaseMockComponent:
 
     def operationNotFound(self,ctx):
         print("error: Operation not found: {}".format(ctx))
-
+        return {"error":"invalid operation"}
+    def callNotImplemented(self,ctx):
+        print("error: This isn't implemented yet: {}".format(ctx))
+        return {"error":"not implemented (yet)"}
+    def call(self, fname, args):
+        lut = self.dispatch_lut
+        if fname not in lut:
+            return self.operationNotFound(fname)
+        else:
+            return lut[fname](args)
     def setConfig(self, args):
+        key = None #todo
+        val = None #todo
+        print("debug: setting {} to {}".format(key,val))
+        if key in self.config:
+            self.config[key] = val
+            err = False
+        else:
+            err = True    
         return {
-            "restart_required": False
+            "restart_required": False,
+            "error" : False
         }
- 
+    def getConfig(self, args):
+        key = None #todo
+        val = None
+
+        if key in self.config:
+            val = self.config[key]
+            err = False
+        else:
+            err = True
+        return {
+            "value":val,
+            "error":err
+        }
 
 class InputComponent(BaseMockComponent):
     """
@@ -61,6 +101,7 @@ class InputComponent(BaseMockComponent):
         Initialize Input in a known state (OFF)
         Populate the lookup table for a string based call() mechanism
         """
+        super().__init__()
         self.deviceref = dev
         self.val = InputComponent.InputValue.OFF
 
@@ -73,45 +114,32 @@ class InputComponent(BaseMockComponent):
         lut['Trigger'] = self.trigger
         self.dispatch_lut = lut
 
-    def call(self, fname : str, args : dict):
-        #Push this into the base class!
-        """ Look up method by name and forward args """
-        lut = self.dispatch_lut
-        if fname not in lut:
-            return self.operationNotFound(fname)
-        else:
-            return lut[fname](args)
-
-    def getConfig(self, args : dict):
-        """ Return a valid canned config until setConfig is implemented """
-        return '{"called":"getConfig"}'
-
-    def getStatus(self, args : dict):
+    def getStatus(self, args:dict):
         """ Return status of a digital input """
+        id = int(args['id'])
         valstr = str(self.val)
-        status = {
-            'id':None,
+        return {
+            'id':id,
             'state':valstr
         }
-        return status
 
-    def resetCounters(self, args : dict):
+    def resetCounters(self, args:dict):
         """
         No-op, but return a valid response
-        Counter inputs not supported yet
         """
-        return '{"called":"resetCounters"}'
-    def trigger(self, args : dict):
+        return self.callNotImplemented("ResetCounters")
+    def trigger(self, args:dict):
         """
         Not implemented, try to return valid response.
         """
-        return '{"called":"trigger"}'
+        return self.callNotImplemented("Trigger")
 
 class SystemComponent(BaseMockComponent):
     """Component that returns system stats"""
-    __slots__ = 'system_state', 'system_config'
+    __slots__ = 'system_state'
 
     def __init__(self, dev):
+        super().__init__()
         self.deviceref = dev
         lut = {}
         lut['GetConfig'] = self.getConfig
@@ -120,7 +148,7 @@ class SystemComponent(BaseMockComponent):
         self.dispatch_lut = lut
 
         # Add keys, don't need vals for now
-        self.system_config = {
+        self.config = {
             "device":{
                 "name":None,
                 "eco_mode":None,
@@ -168,18 +196,6 @@ class SystemComponent(BaseMockComponent):
             }
         }
 
-    def call(self, fname, args):
-        """ See InputComponent """
-        lut = self.dispatch_lut
-        if fname not in lut:
-            return self.operationNotFound(fname)
-        else:
-            return lut[fname](args)
-
-    def getConfig(self, args:dict):
-        """ Config from example """
-        return self.system_config
-
     def getStatus(self, args:dict):
         """ Other things update status, this just returns it """
         # todo: need locking?
@@ -189,12 +205,14 @@ class SwitchComponent(BaseMockComponent):
     """Single switch/relay output"""
     __slots__ = 'output'
 
-    class OutputValue(Enum):
+    @enum.verify(UNIQUE)
+    class OutputValue(Flag):
         """ This only applies to AC on/off """
-        OFF = 0
-        ON = 1
+        OFF = False
+        ON = True
 
     def __init__(self, dev):
+        super().__init__()
         self.deviceref = dev
         lut={}
         lut['GetConfig'] = self.getConfig
@@ -205,36 +223,55 @@ class SwitchComponent(BaseMockComponent):
         self.dispatch_lut = lut
         self.output = SwitchComponent.OutputValue.OFF
 
-    def call(self, fname, args):
-        lut = self.dispatch_lut
-        if fname not in lut:
-            return self.operationNotFound(fname)
-        else:
-            return lut[fname](args)
-
-    def getConfig(self, args):
+    def notify(self):
+        """ Generate event to update dependents upon state change """
+        #todo
         pass
 
-    def getStatus(self, args):
-        valstr = str(self.output)
+    def getStatus(self, args:dict):
+        id = int(args[id])
+        val = str(self.output)
         resp = {
-            'id':None,
-            'output':valstr,
+            'id':id,
+            'output':val,
             'voltage':120,
             'freq':60,
         }
         return resp
-    def set(self):
-        pass
-    def toggle(self):
-        pass
-    def resetCounters(self):
-        pass
+    def set(self, args:dict):
+        """
+        Support setting an output relay on or off
+        Note: This doesn't support the time argument yet.
+        """
+        on = bool('on')
+        if on:
+            #todo: should be able to do bitwise ops to xor flag
+            self.output = SwitchComponent.OutputValue.OFF
+        else:
+            self.output = SwitchComponent.OutputValue.ON
+        return {
+            'was_on':on
+        }
+    def toggle(self, args:dict):
+        """ Flip the relay state """
+        was_on = None
+        if self.output == SwitchComponent.OutputValue.ON:
+            self.output = SwitchComponent.OutputValue.OFF
+            was_on = True
+        else:
+            self.output = SwitchComponent.OutputValue.ON
+            was_on = False
+        return {
+            'was_on':was_on
+        }
+    def resetCounters(self, args:dict):
+        return self.callNotImplemented("ResetCounters")
 
 class KVSComponent(BaseMockComponent):
     """ Stubbing this out - NOTHING TESTED """
     __slots__ = 'kvs_map'
     def __init__(self, dev):
+        super().__init__()
         self.deviceref = dev
         self.kvs_map = {}
 
@@ -246,14 +283,14 @@ class KVSComponent(BaseMockComponent):
         lut['Delete'] = self.doDelete
         self.dispatch_lut = lut
 
-    def call(self, fname, args):
+    def call(self, fname:str, args:dict):
         lut = self.dispatch_lut
         if fname not in lut:
             return self.operationNotFound(fname)
         else:
             return lut[fname](args)
 
-    def doSet(self, args):
+    def doSet(self, args:dict):
         """ Add etag support later """
         key = args['key']
         vpair = args['value'].split(' ')
@@ -264,7 +301,7 @@ class KVSComponent(BaseMockComponent):
         }
         return rval
         
-    def doGet(self, args):
+    def doGet(self, args:dict):
         key = args['key']
         v = None
         if key in self.kvs_map:
@@ -274,11 +311,11 @@ class KVSComponent(BaseMockComponent):
             "value": v
         }
 
-    def doGetMany(self, args):
+    def doGetMany(self, args:dict):
         pass
-    def doList(self, args):
+    def doList(self, args:dict):
         pass
-    def doDelete(self, args):
+    def doDelete(self, args:dict):
         key = args['key']
         del self.kvs_map[key]
         return {
@@ -286,11 +323,13 @@ class KVSComponent(BaseMockComponent):
         }
         
 class ScriptComponent(BaseMockComponent):
-    """An instance of a script manager running on the device"""
+    """
+    An instance of a script manager running on the device
+    JS2PY seems like it could handle js
+    """
     def __init__(self, dev):
+        super().__init__()
         self.deviceref = dev
-    def getConfig(self):
-        pass
     def getStatus(self):
         pass
     def list(self):
@@ -313,7 +352,7 @@ class ScriptComponent(BaseMockComponent):
 class DeviceState:
     """
     Represent a set of hardware components (e.g. IO) and system services that a device sould run
-    note: Until device profile configs are used to init this just sets up a bunch of IO
+    note: This just sets up a fixed amount of components, it's not config driven yet.
     """
     __slots__ = 'inputs', 'switches', 'system', 'scripts', 'kvs'
 

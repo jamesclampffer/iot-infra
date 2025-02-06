@@ -74,10 +74,13 @@ class EndpointState:
             pair = pair.split('=')
             m[pair[0]] = pair[1]
 
-        topic = path.split('?')[0]
+        #topic = path.split('?')[0]
+        topic = 'placeholder_topic'
         return self.recv_record(topic, m)
 
     def recv_record(self, topic:str, recordcontents : dict) -> str:
+        #FIXME: rec = TelemetryRecord(recordcontents)
+        #print(str(rec))
         return json.dumps({
             'recorded':True
         })
@@ -85,8 +88,6 @@ class EndpointState:
 
 class StdoutEndpoint(BaseHTTPRequestHandler):
     singleton_state = None
-    def __init__(self):
-        pass
 
     def do_GET(self):
         s = StdoutEndpoint.singleton_state
@@ -94,25 +95,23 @@ class StdoutEndpoint(BaseHTTPRequestHandler):
             res = s.process_path(self.path)
         except Exception as e:
             print(e)
-            self.send_response(200)
+            self.send_response(400)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             b = bytes(res, 'utf-8')
             self.wfile.write(b)
             return
 
-        #TBD Config flag to return some optional metadata?
-        self.send_response(400)
+        self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         b = bytes(res, 'utf-8')
         self.wfile.write(b)
 
-if __name__ == 'main':
+if __name__ == '__main__':
     HOST = getenv('EPHOST', default='localhost')
-    PORT = getenv('EPPORT')
-    if PORT != None:
-        PORT = int(PORT)
+    PORT = getenv('EPPORT', 9050)
+    PORT = int(PORT)
 
     srv = HTTPServer((HOST,PORT), StdoutEndpoint)
     StdoutEndpoint.singleton_state = EndpointState()
