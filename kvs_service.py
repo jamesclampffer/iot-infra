@@ -15,10 +15,13 @@
 """
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import urlparse
-
+import os
+import urllib.parse
 import pickle
 import json
+
+"Skip a full DNS lookup for the FQDN, much faster"
+DISABLE_LOG_DNS_LOOKUP = True
 
 class InvalidOperationError(BaseException):
     """
@@ -76,6 +79,7 @@ class SharedHash(object):
         lut['get'] = self.get
         lut['set'] = self.set
         lut['delete'] = self.delete
+        lut['listall'] = self.listAll
         self.dispatch_lut = lut
 
     def call(self, uri_path:str):
@@ -96,8 +100,9 @@ class SharedHash(object):
         args = {}
         for apair in argpairs:
             v = apair.split('=')
-            args[v[0]] = v[1]
-        
+            decoded = urllib.parse.unquote_plus(v[1])
+            args[v[0]] = decoded
+
         k = None
         if 'key' in args:
             k = args['key']
@@ -110,7 +115,8 @@ class SharedHash(object):
         # lambda bindings in lut setup rather than tuple wrapped args?
         if oper in self.dispatch_lut:
             return self.dispatch_lut[oper]((k,v))
-        return "invalid operation!"
+        else:
+            return {'error':'invalid operation: {}'.format(oper)}
 
     def set(self, kvtup):
         """ Bump version number on each set call, even if same value """
@@ -146,11 +152,25 @@ class SharedHash(object):
             'lastversion':ref.version
         }
 
+    def listAll(self, keytup:tuple):
+        """
+        Serialize the whole map
+        Client may send a regex filter in the query, for now that's unused
+        """
+        doc = {}
+        for key in self.table:
+            vref = self.table[key]
+            doc[key] = {
+                'value':vref.value(),
+                'version':vref.version
+            }
+    
+        return doc
+
+
     # not public interface
     def addslot(self,keytup):
         """ Make sure there's a slot (and table) set up. Don't need latter anymore """
-        if self.table == None:
-            self.table = dict()
         key = keytup
         if key in self.table:
             return
@@ -159,15 +179,20 @@ class SharedHash(object):
 
 class KVSHandler(BaseHTTPRequestHandler):
     """ Exists to forward requests from do_GET to the singletonState class var """
-
     singletonState = SharedHash()
-    def do_GET(self):
 
-        # Handle browser stuff better..
-        if self.path.find('/favicon.ico') == 0:
-            self.send_response(204) # 204=no content
+    def do_GET(self):
+        """ Process command encoded in a URI """
+
+        def setup_response(code:int):
+            """ Util to send HTTP header """
+            self.send_response(code)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
+           
+        # Handle browser stuff better..
+        if self.path.find('/favicon.ico') == 0:
+            setup_response(204) #no content
             self.wfile.write(bytes("",'utf-8'))
             return
 
@@ -176,40 +201,34 @@ class KVSHandler(BaseHTTPRequestHandler):
         try:
             obj = KVSHandler.singletonState.call(self.path)
         except InvalidOperationError as e:
-            print('error: {}'.format(str(e)))
-            self.send_response(400)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
+            setup_response(400) # Operation not found
             return
         except HashKeyNotFoundError as e:
-            print('error: {}'.format(str(e)))
-            self.send_response(404)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
+            setup_response(404) # Resource not found
             return
 
-        print("sending {}".format(obj))
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
+        # Success header, followed by data
+        setup_response(200)
 
         # serialize to json
         outbytes = json.dumps(obj)
         self.wfile.write(bytes(outbytes,'utf-8'))
 
-if __name__ == '__main__':
-    #XXX Use config or cmd line args
-    HOST = 'localhost'
-    PORT = 9090
 
-    print("Starting server")
+if __name__ == '__main__':
+    """ Spin up a single process KVS service"""
+
+    HOST = os.getenv('KVS_HOST', '127.0.0.1')
+    PORT = os.getenv('KVS_PORT', 9090)
+    PORT = int(PORT)
+
     srv = HTTPServer((HOST, PORT), KVSHandler)
     KVSHandler.singleton_state = SharedHash()
-    print("kvs server started localhost:9090")
 
     # Start listening
     try:
         srv.serve_forever()
+        print("kvs server started {}:{}".format(HOST,PORT))
     except KeyboardInterrupt:
         srv.socket.close()
             

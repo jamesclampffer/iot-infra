@@ -21,3 +21,12 @@ To testing mock emitters and endpoint using the default authority 'localhost:905
 2) in terminal 2> python3 mock-emitters.py
 3) Watch stdout
 
+
+KVS Service
+- Simple {string:string} map available via HTTP
+  - kvs_service: the server
+  - kvs_client: client API
+  - kvs_test: smoke test, start kvs_service prior to running
+
+
+
