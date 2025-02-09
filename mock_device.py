@@ -14,76 +14,13 @@
   limitations under the License.       
 """
 
+from basemockcomponent import *
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from enum import Enum, Flag, UNIQUE
 import enum
 import json
 import sys
 from urllib.parse import urlparse
-
-class ComponentNotFound(BaseException):
-    __slots__ = 'what'
-    def __init__(self, w):
-        self.what = w
-    def __str_(self):
-        return self.__repr__()
-    def __repr__(self):
-        return "ComponentNotFound: {}".format(self.what)
-
-class BaseMockComponent:
-    """
-    Intend to move error handling and logging utils into here, the call()
-    method could also be hoisted.
-
-    deviceref: Pointer to the device for components that need crosstalk
-    dispatch_lit: name->method obj mapping
-    component_config: dict containing a canned config for the component
-    """
-    __slots__ = 'deviceref', 'dispatch_lut', 'config'
-    def __init__(self):
-        """ Just explicitly null out slots """
-        self.deviceref = None
-        self.dispatch_lut = None
-        self.component_config = None
-
-    def operationNotFound(self,ctx):
-        print("error: Operation not found: {}".format(ctx))
-        return {"error":"invalid operation"}
-    def callNotImplemented(self,ctx):
-        print("error: This isn't implemented yet: {}".format(ctx))
-        return {"error":"not implemented (yet)"}
-    def call(self, fname, args):
-        lut = self.dispatch_lut
-        if fname not in lut:
-            return self.operationNotFound(fname)
-        else:
-            return lut[fname](args)
-    def setConfig(self, args):
-        key = None #todo
-        val = None #todo
-        print("debug: setting {} to {}".format(key,val))
-        if key in self.config:
-            self.config[key] = val
-            err = False
-        else:
-            err = True    
-        return {
-            "restart_required": False,
-            "error" : False
-        }
-    def getConfig(self, args):
-        key = None #todo
-        val = None
-
-        if key in self.config:
-            val = self.config[key]
-            err = False
-        else:
-            err = True
-        return {
-            "value":val,
-            "error":err
-        }
 
 class InputComponent(BaseMockComponent):
     """
@@ -229,7 +166,7 @@ class SwitchComponent(BaseMockComponent):
         pass
 
     def getStatus(self, args:dict):
-        id = int(args[id])
+        id = int(args['id'])
         val = str(self.output)
         resp = {
             'id':id,
@@ -243,14 +180,16 @@ class SwitchComponent(BaseMockComponent):
         Support setting an output relay on or off
         Note: This doesn't support the time argument yet.
         """
-        on = bool('on')
+        prior = self.output
+
+        on = bool(args['on'])
         if on:
             #todo: should be able to do bitwise ops to xor flag
-            self.output = SwitchComponent.OutputValue.OFF
-        else:
             self.output = SwitchComponent.OutputValue.ON
+        else:
+            self.output = SwitchComponent.OutputValue.OFF
         return {
-            'was_on':on
+            'was_on':prior == SwitchComponent.OutputValue.ON
         }
     def toggle(self, args:dict):
         """ Flip the relay state """
@@ -266,6 +205,46 @@ class SwitchComponent(BaseMockComponent):
         }
     def resetCounters(self, args:dict):
         return self.callNotImplemented("ResetCounters")
+
+class RelayAdapter(object):
+    __slots__ = 'device_ref'
+
+    def __init__(self, ref):
+        self.device_ref = ref
+
+    def turn(self, pathstr:str, pairs:dict):
+        """
+        Handle relay interactions using the path form
+        <authority>/relay/<int id>?{toggle|on|off}
+        """
+        assert pathstr.find("/relay/") == 0
+        getdev = lambda idx : self.device_ref.switches[idx]
+
+        try:
+            pathstr = pathstr.replace('/relay/','')
+            pair = pathstr.split('?')
+            dev_id = int(pair[0])
+
+            if 'turn' in pairs:
+                if pairs['turn'] == 'on':
+                    d = getdev(dev_id)
+                    return d.set({'id': dev_id,'on': True })
+                elif pairs['turn'] == 'off':
+                    d = getdev(dev_id)
+                    return d.set({'id': dev_id,'on': False })
+                elif pairs['turn'] == 'toggle':
+                    d = getdev(dev_id)
+                    return d.toggle()
+                else:
+                    # Malformed request
+                    print("error: invalid turn value: {}".format(pairs[turn]))
+            else:
+                print("\nError processing: {} \n".format(pathstr))
+
+        except Exception as e:
+            print(str(e))
+            return {'error': 'exception {}'.format(str(e))}
+
 
 class KVSComponent(BaseMockComponent):
     """ Stubbing this out - NOTHING TESTED """
@@ -302,6 +281,7 @@ class KVSComponent(BaseMockComponent):
         return rval
         
     def doGet(self, args:dict):
+        print(args)
         key = args['key']
         v = None
         if key in self.kvs_map:
@@ -354,7 +334,7 @@ class DeviceState:
     Represent a set of hardware components (e.g. IO) and system services that a device sould run
     note: This just sets up a fixed amount of components, it's not config driven yet.
     """
-    __slots__ = 'inputs', 'switches', 'system', 'scripts', 'kvs'
+    __slots__ = 'inputs', 'switches', 'relayhandler', 'system', 'scripts', 'kvs'
 
     def __init__(self):
         print("Setting up emulated hardware")
@@ -363,6 +343,9 @@ class DeviceState:
         self.system = SystemComponent(self)
         self.scripts = []
         self.kvs = KVSComponent(self)
+        self.relayhandler = RelayAdapter(self)
+
+        #self.relayadapter = RelayAdapter(self)
 
     def process_get(self, pathstr : str) -> str:
         """ Pull apart the URI and figure out what to do """
@@ -375,12 +358,13 @@ class DeviceState:
         q = uriobj.query
         pairs = {}
         substrs = q.split('&')
+        print(substrs)
         for pair in substrs:
-            print(pair)
-            a, b = tuple(pair.split('='))
+            splitval = pair.split('=')
+            a, b = splitval
             pairs[a] = b
 
-        # Find component id if there is one, isex to index into vector of components
+        # Find component id if there is one, index to index into vector of components
         id = None
         if 'id' in pairs:
             id = int(pairs['id'])
@@ -388,11 +372,18 @@ class DeviceState:
         #TODO: Lookup table line mock-emitters.py uses
         resp = None
         p = uriobj.path
-        if p.find('Input') == 1:
+
+        #FIXME hack to flatten rpc namespace
+        if p.find('/rpc') == 0:
+            p = p[4:]
+
+        # Special case this API for now
+        if p.find('/relay') == 0:
+            resp = self.relayhandler.turn(p, pairs)
+        elif p.find('Input') == 1:
             if id not in range(len(self.inputs)):
                 return self.componentIdNotFound(id)
             fname = p[7:].split('?')[0]
-            print(fname)
             resp = self.inputs[id].call(fname, pairs)
         elif p.find('Switch') == 1:
             if id not in range(len(self.inputs)):
@@ -422,7 +413,7 @@ class DeviceState:
         # make JSON out of dict
         return json.dumps(resp)
 
-    def componentIdNotFound(self, id : int):
+    def componentIdNotFound(self, id:int):
         print("warn: Component index {} does not exist".format(id))
 
 
@@ -445,14 +436,15 @@ class MockShellyDevice(BaseHTTPRequestHandler):
         else:
             # Poke the device state, respond accordingly
             resp = MockShellyDevice.singleton_state.process_get(self.path)
-            print("info: got json resp {} for {}".format(resp, self.path))
             # Send response to client
+            if resp == None:
+                resp = json.dumps({'error':'unset return value'})
             self.wfile.write(bytes(resp, 'utf-8'))
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:
         sys.argv.append('localhost')
-        sys.argv.append('8080')
+        sys.argv.append('80')
         if len(sys.argv) == 3:
             _, hostname, port = sys.argv
             print("Starting, host={} port={}".format(hostname,port))
@@ -461,7 +453,7 @@ if __name__ == '__main__':
 
     # Make the mock device
     print("Starting server")
-    srv = HTTPServer(('localhost',8080), MockShellyDevice)
+    srv = HTTPServer(('localhost',80), MockShellyDevice)
     MockShellyDevice.singleton_state = DeviceState()
     print("server started localhost:8080")
 

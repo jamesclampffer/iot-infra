@@ -57,6 +57,7 @@ class ShellyHttpDeviceProxy(SimpleDeviceProxy):
 
     def getDeviceInfo(self):
         self.uri_path = 'Shelly.getDeviceInfo'
+        self.uri_query = ''
         return self.do_rpc()
 
     def kvsSet(self, key:str, val):
@@ -68,7 +69,7 @@ class ShellyHttpDeviceProxy(SimpleDeviceProxy):
     def kvsGet(self, key):
         """ Set value from the device's KVS service """
         self.uri_path = '/rpc/KVS.Get'
-        self.uri_query = 'key="{}"'.format(key)
+        self.uri_query = 'key={}'.format(key)
         return self.do_rpc()
 
     def kvsList(self, filter=None):
@@ -232,31 +233,4 @@ class ShellyHttpDeviceProxy(SimpleDeviceProxy):
 
 
 if __name__ == "__main__":
-    """smoke test: Poke around with device on 192.168.0.32"""
-    x = ShellyHttpDeviceProxy('192.168.0.32')
-    j = x.kvsSet("k1", "1")
-    print(j)
-    j = x.kvsGet("k1")
-    print(j)
-
-    v = x.getInputStatus(0)
-    print(v)
-    v = x.getInputStatus(1)
-    print(v)
-
-    v = x.setRelay(0,False)
-    print(v)
-    v = x.getSwitchStatus(0)
-    print(v)
-    v = x.toggleRelay(0)
-    print(v)
-    v = x.getSwitchStatus(0)
-    print(v)
-    v = x.getSwitchStatus(1)
-    print(v)
-    v = x.getSystemStatus()
-    print(json.dumps(v,indent=4))
-    v = x.getSystemConfig()
-    print(v)    
-    v = x.kvsList('*')
-    print(json.dumps(v,indent=4))
+    pass
