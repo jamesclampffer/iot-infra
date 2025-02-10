@@ -14,27 +14,52 @@
   limitations under the License.       
 """
 
-import shelly_client
-import urllib.request as builtin_request
 import json
+import os
+import shelly_client
 
-if __name__ == "__main__":
-    client = shelly_client.ShellyHttpDeviceProxy('127.0.0.1')
-
-
+def test_toggle_all(client):
     for i in (0,1,2,3):
         res = client.setRelay(i, False)
+        assert 'error' not in res
         print(res)
 
     for i in (0,1,2,3):
         res = client.getSwitchStatus(i)
+        assert 'error' not in res
         print(res)
 
     for i in (0,1,2,3):
         res = client.setRelay(i, True)
+        assert 'error' not in res
         print(res)
 
     for i in (0,1,2,3):
         res = client.getSwitchStatus(i)
+        assert 'error' not in res
         print(res)
+
+def test_kvs_getset(client):
+    for i in range(10):
+        res = client.kvsSet(str(i), str(i*i))
+        assert 'error' not in res
+    for i in range(10):
+        res = client.kvsGet(str(i))
+        assert 'error' not in res
+        val = res['value']        
+        assert int(val) == i*i
+
+if __name__ == "__main__":
+    HOST = os.getenv("DEVICE_TEST_PORT","127.0.0.1")
+
+    client = shelly_client.ShellyHttpDeviceProxy(HOST)
+
+    test_toggle_all(client)
+    test_kvs_getset(client)
+    print("Made it to end without an assertion error... PASS")
+
+
+
+
+
 

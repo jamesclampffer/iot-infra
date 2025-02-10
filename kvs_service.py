@@ -45,8 +45,8 @@ class HashKeyNotFoundError(BaseException):
 
 class VersionedPickle(object):
     """ 
-    Serialize contents
-    TODO: Is picking datum usefull here?
+    Serialize contents, bump version number on assignment
+    TODO: No reason left to use pickle
     """
     __slots__ = 'bytes', 'version'
     def __init__(self):
@@ -140,7 +140,6 @@ class SharedHash(object):
         }
 
     def delete(self, keytup:tuple):
-        """ Not tested! """
         key, _ = keytup
         if key not in self.table:
             return {
@@ -164,9 +163,7 @@ class SharedHash(object):
                 'value':vref.value(),
                 'version':vref.version
             }
-    
         return doc
-
 
     # not public interface
     def addslot(self,keytup):
@@ -196,7 +193,7 @@ class KVSHandler(BaseHTTPRequestHandler):
             self.wfile.write(bytes("",'utf-8'))
             return
 
-        # Do lookup, make sure response header is reasonable
+        # Dispatch, catch errors due to malformed requests
         obj = None
         try:
             obj = KVSHandler.singletonState.call(self.path)
@@ -209,8 +206,6 @@ class KVSHandler(BaseHTTPRequestHandler):
 
         # Success header, followed by data
         setup_response(200)
-
-        # serialize to json
         outbytes = json.dumps(obj)
         self.wfile.write(bytes(outbytes,'utf-8'))
 

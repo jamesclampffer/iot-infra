@@ -20,7 +20,7 @@ from enum import Enum, Flag, UNIQUE
 import enum
 import json
 import sys
-from urllib.parse import urlparse
+import urllib.parse
 
 class InputComponent(BaseMockComponent):
     """
@@ -272,8 +272,12 @@ class KVSComponent(BaseMockComponent):
     def doSet(self, args:dict):
         """ Add etag support later """
         key = args['key']
-        vpair = args['value'].split(' ')
-        self.kvs_map[key] = vpair
+        val = args['value']
+        key = urllib.parse.unquote_plus(key)
+        val = urllib.parse.unquote_plus(val)
+
+        # Skip versioning for now
+        self.kvs_map[key] = val
         rval = {
             "etag": "",
             "rev": -1
@@ -281,7 +285,6 @@ class KVSComponent(BaseMockComponent):
         return rval
         
     def doGet(self, args:dict):
-        print(args)
         key = args['key']
         v = None
         if key in self.kvs_map:
@@ -358,7 +361,6 @@ class DeviceState:
         q = uriobj.query
         pairs = {}
         substrs = q.split('&')
-        print(substrs)
         for pair in substrs:
             splitval = pair.split('=')
             a, b = splitval

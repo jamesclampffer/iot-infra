@@ -14,7 +14,8 @@
   limitations under the License.       
 """
 
-import urllib.request as builtin_request
+import urllib.request
+import urllib.parse
 import json
 
 class SimpleDeviceProxy:
@@ -41,14 +42,12 @@ class ShellyHttpDeviceProxy(SimpleDeviceProxy):
         url = 'http://' + self.uri_host + self.uri_path + '?' + self.uri_query
         print("url={}".format(url))
         try:
-            res = builtin_request.urlopen(url)
+            res = urllib.request.urlopen(url)
         except Exception as e:
             print(e)
             raise e
 
-        ret = []
-        for line in res:
-            ret.append(line)
+        ret = [line for line in res]
         assert len(ret) == 1
 
 
@@ -63,12 +62,15 @@ class ShellyHttpDeviceProxy(SimpleDeviceProxy):
     def kvsSet(self, key:str, val):
         """ Set value on the device's KVS service """
         self.uri_path = '/rpc/KVS.Set'
-        self.uri_query = 'key="{}"&value="{}"'.format(key, val)
+        key = urllib.parse.quote_plus(key)
+        val = urllib.parse.quote_plus(val)
+        self.uri_query = 'key={}&value={}'.format(key, val)
         return self.do_rpc()
 
     def kvsGet(self, key):
         """ Set value from the device's KVS service """
         self.uri_path = '/rpc/KVS.Get'
+        key = urllib.parse.quote_plus(key)
         self.uri_query = 'key={}'.format(key)
         return self.do_rpc()
 
