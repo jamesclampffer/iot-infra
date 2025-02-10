@@ -1,0 +1,25 @@
+Arduino sketch that implements a simple emitter node on an ESP8266
+
+Check out the example BasicHttpClient, this firmware just extends that.
+
+Forwards IO:
+- A0: the only ADC
+- D4: One of 2 GPIOs that aren't used for other peripherals
+- D5: The second GPIO (see above)
+
+Notes:
+- not optimized at all, intended to be easy to hack up
+- data collector and mock emitters will need a few updates to handle uuid
+
+Tested on:
+- "wemos mini D1" clone board, any esp8266 should work. Pin assignments
+  might need to be changed depending on HAL.
+- Run with stack protection enabled and optimizations disabled. Flash is
+  a little tight (some might be due to a fixed-size blob) but there is no
+  shortage of RAM.
+  - Will be interested to see if heap fragmentation becomes an issue. Most
+    of those allocs happen inside the ESP/Arduino code though.
+
+
+Issues:
+- Need to sort out IP attribution
