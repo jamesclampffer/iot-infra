@@ -1,120 +1,97 @@
-import json
+"""
+  Copyright 2024 Jim Clampffer
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at^M
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+"""
+
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
 from os import getenv
-import urllib.parse
 import uuid
+import urllib.parse
 
-# This is what'd live in a config file later on
-# A record my define a subset or superset of what the endpoint will recv
-# For now just hard code a couple subclasses
-"""
-recorddefs = {
-    'compressor' : {
-        'psi':'float',
-        'compressor_running':'bool',
-    }
-}
-"""
-
-class TelemetryRecord:
-    __slots__ = 'uuid', 'recordtype', 'recordtypever', 'colnames', 'kvpairs'
-    def __init__(self, kvpairs):
-        """ Set up common column names """
-        self.colnames = ['uuid', 'recordtype', 'recordtypever']
-        self.uuid = uuid.SafeUUID()
-        self.recordtype = 'TelemetryRecordBase'
-        self.recordtypever = '0.0.0'
-        self.kvpairs = kvpairs
-    def __repr__(self):
-        return 'TelemetryRecord {}.{}: {}'.format(self.recordtype, self.recordtypever, json.dumps(self.kvpairs))
-    def __str__(self):
-        return self.__repr__()
-    def to_delimited(self, delim=' '):
-        """ Build a delimited string of just the values based on ordinal pos """
-        buf=[]
-        for colname in self.colnames:
-            if colname not in self.kvpairs:
-                val = None
-            else:
-                val = str(self.kvpairs[colname])
-            buf.append(val)
-        return delim.join(buf)
-    def to_json(self):
-        arr = []
-        for idx, colname in enumerate(self.colnames):
-            colval = None
-            if colname in self.kvpairs:
-                colval = self.kvpairs[colname]
-            arr.append({
-                'name': colname,
-                'colidx': idx,
-                'value': colval
-            })
-            return json.dumps(arr)
+import collector_backend
             
 class EndpointState:
-    __slots__ = 'records'
-    def __init__(self):
-        self.records = []
-        pass
+    """ Make sense of incoming GET requests, write them to the backend """
+    __slots__ = 'writer'
+    def __init__(self, backend=None):
+        if backend == None:
+            self.writer = collector_backend.DBWriter()
+        else:
+            self.writer = backend
+
     def process_path(self, path:str):
-        """ Return json string response """
-        print("processing path: {}".format(path))
-        # Expects a simple authority/?query
-        # Consider using the path to indicate the desired grouping
+        """
+        Path expected to be of the form authority/?<query>, however handling
+        <authority>/<topic>?<query> should be supported soon.
+        Return json string response
+        """
 
-        encodedqry = path.split('?')[1]
-        #FIXME: Only values of query parts should be escaped
-        qry = urllib.parse.unquote_plus(encodedqry)
-
-        # do this with urllib parser
+        # TODO: do this with urllib parser
+        qry = path.split('?')[1]
         pairs = qry.split('&')
         m = {}
         for pair in pairs:
             pair = pair.split('=')
+            pair[1] = urllib.parse.unquote_plus(pair[1])
             m[pair[0]] = pair[1]
 
-        #topic = path.split('?')[0]
-        topic = 'placeholder_topic'
-        return self.recv_record(topic, m)
+        # TODO: Using the path to indicate the desired grouping/topic
+        return self.recv_record(m)
 
-    def recv_record(self, topic:str, recordcontents : dict) -> str:
-        #FIXME: rec = TelemetryRecord(recordcontents)
-        #print(str(rec))
+    def recv_record(self, recordcontents : dict) -> str:
+        self.writer.acceptData(recordcontents)
         return json.dumps({
             'recorded':True
         })
 
 
 class StdoutEndpoint(BaseHTTPRequestHandler):
-    singleton_state = None
+    singletonState = None
 
     def do_GET(self):
-        s = StdoutEndpoint.singleton_state
+        def send_header(code:int):
+            """ Send http response header """
+            self.send_response(code)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+
+        s = StdoutEndpoint.singletonState
         try:
             res = s.process_path(self.path)
         except Exception as e:
+            # TODO: identify and disambiguate failure modes (400 vs 404 etc)
             print(e)
-            self.send_response(400)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            b = bytes(res, 'utf-8')
+            send_header(400)
+            # TODO: Does spec require a response body?
+            b = bytes("", 'utf-8')
             self.wfile.write(b)
             return
 
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
+        # Report success
+        send_header(200)
         b = bytes(res, 'utf-8')
         self.wfile.write(b)
 
 if __name__ == '__main__':
-    HOST = getenv('EPHOST', default='localhost')
-    PORT = getenv('EPPORT', 9050)
+    # Bind to all network interfaces by default
+    HOST = getenv('EP_HOST', default='0.0.0.0')
+    PORT = getenv('EP_PORT', 9050)
     PORT = int(PORT)
 
     srv = HTTPServer((HOST,PORT), StdoutEndpoint)
-    StdoutEndpoint.singleton_state = EndpointState()
+    StdoutEndpoint.singletonState = EndpointState()
 
     # Start listening
     try:
