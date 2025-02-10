@@ -21,6 +21,8 @@ class NetworkTimeout(BaseException):
         return "NetworkTimeout: {}".format(self.what)
 
 class MockTelemetryEmitter:
+    runLoop = True
+
     __slots__ = 'device_type', 'device_model', 'firmware_ver', 'protocol_ver', \
             'endpoint_host', 'endpoint_port'
     def __init__(self, host, port):
@@ -52,7 +54,7 @@ class MockTelemetryEmitter:
         uri = 'http://{}:{}?{}'.format(self.endpoint_host, self.endpoint_port, qstr)
         print("Sending: {}".format(uri))
         try:
-            res = builtin_open.urlopen(uri)
+            res = urllib.request.urlopen(uri)
         except urllib.error.URLError as e:
             print("got url error)")
             return {}
@@ -66,18 +68,37 @@ class MockTelemetryEmitter:
         return doc
 
     def loop(self, interval_s:int):
-        while True:
+        while MockTelemetryEmitter.runLoop:
             try:
                 resp = self.send_get_req()
                 print("Got response: {}".format(json.dumps(resp)))
                 time.sleep(interval_s)
             except KeyboardInterrupt as e:
                 print("exiting {}: {}".format(str(self),str(e)))
-                break
+
+                # Stop other thread loops
+                MockTelemetryEmitter.runLoop = False
+                raise e
             except Exception as e:
                 # ignore this, assume network timeout for now
                 print("caught {}.. trying again".format(str(e)))
-        print('exiting loop fn')
+
+class SingleChannelSensor(MockTelemetryEmitter):
+    __slots__ = 'makevalue', 'guid'
+    def __init__(self, host, port, guid:str):
+        super().__init__(host,port)
+        self.device_type = 'SingleChannelSensor'
+        self.device_model = 'PythonMock'
+        self.makevalue = lambda : 1.0
+        self.guid = guid
+    def getcurrent(self):
+        return {
+            'sensor_uuid' : "DEADBEEF",         # UUID if a 1-Wire with ID in ROM
+            'sensor_metric' : "current",        # Thing being tracked
+            'sensor_units' : "amp",             # Thing's unit of measurement
+            'sensor_poll' : self.makevalue()    # Make a value for this call
+        }
+
 
 class AirCompressor(MockTelemetryEmitter):
     def __init__(self, host, port):
@@ -125,15 +146,28 @@ class Heater(MockTelemetryEmitter):
 if __name__ == '__main__':
     # Mock endpoint default localhost:9050
     # Override with env vars
-    EP_HOST = os.environ.get('EP_HOST', 'localhost')
+    EP_HOST = os.environ.get('EP_HOST', '127.0.0.1')
     EP_PORT = os.environ.get('EP_PORT', 9050)
     EP_PORT = int(EP_PORT)
 
     # Make configurable later
     BROADCAST_INTERVAL = 5
 
+    def make_some_sensors(cnt:int):
+        sensors = []
+        for i in range(cnt):
+            v = SingleChannelSensor(EP_HOST,EP_PORT, "Chan {}".format(i))
+            sensors.append(v)
+        return sensors
+
     #some example devices
-    tools = [Heater('localhost',9050), AirDryer('localhost',9050), AirCompressor('localhost',9050)]
+    tools = [Heater(EP_HOST,9050),
+             AirDryer(EP_HOST,9050),
+             AirCompressor(EP_HOST,9050),
+             ]
+
+    simple_sensors = make_some_sensors(50)
+    tools = tools + simple_sensors
     for tool in tools:
         print(tool)
 
@@ -141,17 +175,11 @@ if __name__ == '__main__':
     for tool in tools:
         fn = lambda i: tool.loop(i) 
         t = threading.Thread(target=fn, args=[BROADCAST_INTERVAL])  
-        t.run()
+        t.start()
         threads.append(t)
 
-
-    time.sleep(5 * 60)
 
 
     # join when loops exit due to keyboard interrupt
     for t in threads:
         t.join()
-
-
-
-
