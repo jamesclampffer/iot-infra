@@ -44,8 +44,13 @@ class ShellyHttpDeviceProxy(SimpleDeviceProxy):
     def do_rpc(self) -> str:
         url = "http://" + self.uri_host + self.uri_path + "?" + self.uri_query
         print("url={}".format(url))
+
+        req = urllib.request.Request(url, headers={
+            'Accept-Encoding': 'utf-8, ascii'
+        })
+
         try:
-            res = urllib.request.urlopen(url)
+            res = urllib.request.urlopen(req)
         except Exception as e:
             print(e)
             raise e
@@ -237,4 +242,6 @@ class ShellyHttpDeviceProxy(SimpleDeviceProxy):
 
 
 if __name__ == "__main__":
-    pass
+    prox = ShellyHttpDeviceProxy('192.168.1.165')
+    info = prox.getInputConfig(1)
+    print(info)
