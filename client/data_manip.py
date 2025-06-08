@@ -84,11 +84,30 @@ class PickledDataBlock:
         self.schema = fields
         self.is_dense = is_dense
 
-    def _union_all_keys(self, data: list, drilldown=lambda x : x) -> tuple[set, bool]:
+    def _union_all_keys(self, data: list, drilldown=lambda x: x) -> tuple[set, bool]:
+        keyunion = set()
+        dense = True
+
+        # Flatten once for schema inference
+        first_keys = set(flatten_schema(drilldown(data[0])).keys())
+        keyunion.update(first_keys)
+
+        for item in data:
+            flat = flatten_schema(drilldown(item))
+            keys = flat.keys()
+
+            # Union if different.
+            if set(keys) != keyunion:
+                dense = False
+                keyunion.update(keys)
+
+        return (keyunion, dense)
+
+    def _union_all_keys2(self, data: list, drilldown=lambda x : x) -> tuple[set, bool]:
         keyunion = set()
         # initialize with first item for dense check.
         dense = True
-        for itemattr in drilldown(self.data_vector[0]):
+        for itemattr in drilldown(data[0]):
             keyunion.add(itemattr)
 
         # Run through whole set, going over one element a second time
@@ -99,6 +118,8 @@ class PickledDataBlock:
                 if itemattr not in keyunion:
                     dense = False
                     keyunion.add(itemattr)
+        #print(keyunion)
+        #print(len(keyunion))
         return (keyunion, dense)
 
     def _initialize_data(
@@ -124,11 +145,11 @@ class PickledDataBlock:
         colunion, is_dense = self._union_all_keys(data_vector, lambda x : x['status_data'])
 
         for nested in data_vector:
-            outvec.append(flatten_schema(nested, lambda x : x['sample']))
+            outvec.append(flatten_schema(nested, lambda x : x['status_data']))
 
         return (outvec, [c for c in colunion], is_dense)
 
-    def __get__(self, idx: int) -> dict:
+    def __getitem__(self, idx: int) -> dict:
         """
         Fetch item by 0-based index.
         """
@@ -201,6 +222,84 @@ class SmokeTest:
         x = PickledDataBlock("client\sample_data\sample_data.pickle")
         print(x.cols)
         print(x.dense)
+
+        class simplerec:
+            __slots__ = "_sys_time", "_sys_unixtime", "_sys_last_sync_ts", "_voltage", "_t1", "_t2", "_t3", "_psi"
+
+            def __init__(self, systime, nixtime, synctime, voltage, t1, t2, t3, psi):
+                self._sys_time = systime
+                self._sys_unixtime = nixtime
+                self._sys_last_sync_ts = synctime
+                self._voltage = voltage
+                self._t1 = t1
+                self._t2 = t2
+                self._t3 = t3
+                self._psi = psi
+
+            @property
+            def clock_time(self):
+                return self._sys_time
+            @property
+            def unixtime_ms(self):
+                return self._sys_unixtime
+            @property
+            def timesync_ms(self):
+                return self._sys_last_sync_ts
+            @property
+            def voltage(self):
+                return self._voltage
+            @property
+            def tank_temp_f(self):
+                return self._t1
+            @property
+            def motor_temp_f(self):
+                return self._t2
+            @property
+            def ambient_temp_f(self):
+                return self._t3
+            @property
+            def tank_psi(self):
+                return self._psi
+            def __repr__(self):
+                return (
+                    "simplerec(clock_time={}, unixtime_ms={}, timesync_ms={}, "
+                    "voltage={}, tank_temp_f={}, motor_temp_f={}, ambient_temp_f={}, tank_psi={})"
+                ).format(
+                    self._sys_time, self._sys_unixtime, self._sys_last_sync_ts,
+                    self._voltage, self._t1, self._t2, self._t3, self._psi
+                )
+
+        def remove_prefix(rec, prefix):
+            slen = len(prefix)
+            tmp = {}
+            for key, val in rec.items():
+                assert(key.find(prefix) == 0)
+                key = key[slen:]
+                tmp[key] = val
+            return tmp
+
+        for i in range(x.len):
+            record = x[i]
+            record = flatten_schema(record, lambda x: x['status_data'])
+            del record["poller_receive"]
+            record = remove_prefix(record, "status_data.")
+
+            systime = record["sys.time"]
+            nixtime = record["sys.unixtime"]
+            synctime = record["sys.last_sync_ts"]
+            voltage = record["switch:0.voltage"]
+            t1 = record["temperature:100.tF"]
+            t2 = record["temperature:101.tF"]
+            t3 = record["temperature:102.tF"]
+            psi = record['voltmeter:100.xvoltage']
+
+            #todo: perf test if this much better than dict, tbd if it,
+            #      matters but is a somewhat representative access pattern.
+            slotted_rec = simplerec(
+                systime, nixtime, synctime, voltage, t1, t2, t3, psi
+            )
+            print(slotted_rec)
+
 
     def run_schema_tests():
         SmokeTest.test_flatten_schema()
