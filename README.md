@@ -32,12 +32,6 @@ Devices:
 - Some bespoke ESP32-based interface boards
 
 
-To testing mock emitters and endpoint using the default authority 'localhost:9050'
-1) in terminal 1> python3 collector-endpoint.py
-2) in terminal 2> python3 mock-emitters.py
-3) Watch stdout
-
-
 KVS Service
 - Simple {string:string} map available via HTTP
   - kvs_service: the server

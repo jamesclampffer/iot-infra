@@ -1,0 +1,25 @@
+# Collected Data
+
+This directory contains real-world data collected from the devices I'm using for my process automation needs.
+
+## Contents
+
+- Sample data files collected from actual device polling sessions. Stored in Python pickle format for simplicity.
+- No processing done other than filtering or replacing things like SSID and MAC address.
+
+### Data Bias
+- My personal focus is on shop automation and equipment utilization info to drive informed budget allocation. Data collection will be heavily skewed towards these use cases.
+
+## Usage
+
+Use these files for:
+- Validating system assumptions, replay tests
+- Identifying equipment-specific signals that can be extracted from the data. Basic things like utilization and duty cycle through predictive maintenance.
+
+**Note:** Data may contain brittle and device-specific information. Handle appropriately.
+
+### Example files
+compressor_data.json
+- Result of a "Shelly.GetStatus" RPC done on ~0.5s intervals
+- Includes some discontinuity. Downstream stuff needs to be robust to that.
+- Timing jitter due to how polling was done. Two sets of timestamps: when the poller process received it and when the device claimed it broadcasted it. Downstream analysis is expected to be able to interpolate small gaps.
